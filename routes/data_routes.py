@@ -87,3 +87,47 @@ def upload():
             preview = None
 
     return render_template('upload.html', preview=preview)
+
+
+@data_bp.route('/setup-db')
+@data_bp.route('/init-db')
+def setup_db():
+    """Explicit web endpoint to run schema.sql and seed sample data."""
+    import traceback
+    from database.init_db import run_schema_file, auto_seed_if_empty
+    from database.db_connection import get_pymysql_connection
+
+    logs = []
+    success = False
+    table_counts = {}
+
+    try:
+        logs.append("[Step 1] Applying Star Schema database/schema.sql...")
+        run_schema_file()
+        logs.append("[Step 1] Star Schema tables created or verified!")
+
+        logs.append("[Step 2] Checking Fact_Sales and auto-seeding if empty...")
+        auto_seed_if_empty()
+        logs.append("[Step 2] Auto-seeding check completed!")
+
+        # Query all table counts
+        conn = get_pymysql_connection(include_db=True)
+        try:
+            with conn.cursor() as cursor:
+                for tbl in ['Dim_Product', 'Dim_Customer', 'Dim_Date', 'Dim_Country', 'Fact_Sales']:
+                    try:
+                        cursor.execute(f"SELECT COUNT(*) AS cnt FROM {tbl};")
+                        table_counts[tbl] = cursor.fetchone()['cnt']
+                    except Exception as err:
+                        table_counts[tbl] = f"Error: {err}"
+        finally:
+            conn.close()
+
+        logs.append(f"[Step 3] Table verification complete: {table_counts}")
+        success = True
+        return render_template('setup_db.html', success=success, logs=logs, table_counts=table_counts, error=None)
+
+    except Exception as e:
+        err_tb = traceback.format_exc()
+        logs.append(f"[Error] Initialization encountered: {str(e)}")
+        return render_template('setup_db.html', success=False, logs=logs, table_counts=table_counts, error=str(e), traceback=err_tb), 500

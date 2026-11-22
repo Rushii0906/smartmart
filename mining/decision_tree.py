@@ -108,25 +108,29 @@ def extract_invoice_dataset(country=None):
         GROUP BY f.InvoiceNo, co.CountryName;
     """
 
-    conn = get_pymysql_connection(include_db=True)
     try:
-        with conn.cursor() as cursor:
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-    finally:
-        conn.close()
+        conn = get_pymysql_connection(include_db=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+        finally:
+            conn.close()
 
-    if not rows:
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df['line_count'] = df['line_count'].astype(int)
+        df['total_quantity'] = df['total_quantity'].astype(int)
+        df['avg_unit_price'] = df['avg_unit_price'].astype(float)
+        df['distinct_products'] = df['distinct_products'].astype(int)
+        df['invoice_total'] = df['invoice_total'].astype(float)
+
+        return df
+    except Exception as e:
+        print(f"[Decision Tree Warning] Unable to extract invoices (tables may be uninitialized): {e}")
         return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-    df['line_count'] = df['line_count'].astype(int)
-    df['total_quantity'] = df['total_quantity'].astype(int)
-    df['avg_unit_price'] = df['avg_unit_price'].astype(float)
-    df['distinct_products'] = df['distinct_products'].astype(int)
-    df['invoice_total'] = df['invoice_total'].astype(float)
-
-    return df
 
 
 def build_tree_structure(tree, feature_names, node_id=0, depth=0, max_depth=3):

@@ -63,54 +63,58 @@ def get_transaction_baskets(country=None, top_n_products=300):
         where_sql += " AND co.CountryName = %s"
         params.append(country)
 
-    conn = get_pymysql_connection(include_db=True)
     try:
-        with conn.cursor() as cursor:
-            # Step 1: Identify top N most popular products to ensure dense itemset matrix
-            top_prod_sql = f"""
-                SELECT p.Product_ID
-                FROM Fact_Sales f
-                JOIN Dim_Product p ON f.Product_ID = p.Product_ID
-                JOIN Dim_Country co ON f.Country_ID = co.Country_ID
-                {where_sql}
-                GROUP BY p.Product_ID
-                ORDER BY COUNT(*) DESC
-                LIMIT %s;
-            """
-            cursor.execute(top_prod_sql, params + [int(top_n_products)])
-            top_prod_ids = [row['Product_ID'] for row in cursor.fetchall()]
+        conn = get_pymysql_connection(include_db=True)
+        try:
+            with conn.cursor() as cursor:
+                # Step 1: Identify top N most popular products to ensure dense itemset matrix
+                top_prod_sql = f"""
+                    SELECT p.Product_ID
+                    FROM Fact_Sales f
+                    JOIN Dim_Product p ON f.Product_ID = p.Product_ID
+                    JOIN Dim_Country co ON f.Country_ID = co.Country_ID
+                    {where_sql}
+                    GROUP BY p.Product_ID
+                    ORDER BY COUNT(*) DESC
+                    LIMIT %s;
+                """
+                cursor.execute(top_prod_sql, params + [int(top_n_products)])
+                top_prod_ids = [row['Product_ID'] for row in cursor.fetchall()]
 
-            if not top_prod_ids:
-                return [], 0
+                if not top_prod_ids:
+                    return [], 0
 
-            # Step 2: Fetch invoice lines belonging to these top products
-            placeholders = ', '.join(['%s'] * len(top_prod_ids))
-            query = f"""
-                SELECT f.InvoiceNo, p.Description AS item
-                FROM Fact_Sales f
-                JOIN Dim_Product p ON f.Product_ID = p.Product_ID
-                JOIN Dim_Country co ON f.Country_ID = co.Country_ID
-                {where_sql} AND f.Product_ID IN ({placeholders})
-                ORDER BY f.InvoiceNo;
-            """
-            cursor.execute(query, params + top_prod_ids)
-            rows = cursor.fetchall()
-    finally:
-        conn.close()
+                # Step 2: Fetch invoice lines belonging to these top products
+                placeholders = ', '.join(['%s'] * len(top_prod_ids))
+                query = f"""
+                    SELECT f.InvoiceNo, p.Description AS item
+                    FROM Fact_Sales f
+                    JOIN Dim_Product p ON f.Product_ID = p.Product_ID
+                    JOIN Dim_Country co ON f.Country_ID = co.Country_ID
+                    {where_sql} AND f.Product_ID IN ({placeholders})
+                    ORDER BY f.InvoiceNo;
+                """
+                cursor.execute(query, params + top_prod_ids)
+                rows = cursor.fetchall()
+        finally:
+            conn.close()
 
-    if not rows:
+        if not rows:
+            return [], 0
+
+        df = pd.DataFrame(rows)
+        total_distinct_invoices = df['InvoiceNo'].nunique()
+
+        # Group into unique item sets per invoice
+        baskets = df.groupby('InvoiceNo')['item'].apply(lambda x: sorted(list(set(x)))).tolist()
+
+        # Retain only multi-item transactions (baskets with >= 2 distinct items)
+        multi_item_baskets = [b for b in baskets if len(b) >= 2]
+
+        return multi_item_baskets, total_distinct_invoices
+    except Exception as e:
+        print(f"[Apriori Warning] Unable to extract baskets (tables may be uninitialized): {e}")
         return [], 0
-
-    df = pd.DataFrame(rows)
-    total_distinct_invoices = df['InvoiceNo'].nunique()
-
-    # Group into unique item sets per invoice
-    baskets = df.groupby('InvoiceNo')['item'].apply(lambda x: sorted(list(set(x)))).tolist()
-
-    # Retain only multi-item transactions (baskets with >= 2 distinct items)
-    multi_item_baskets = [b for b in baskets if len(b) >= 2]
-
-    return multi_item_baskets, total_distinct_invoices
 
 
 def run_apriori(min_support=0.02, min_confidence=0.3, min_lift=1.0, country=None, top_n_products=150, max_rules=100, max_len=3):

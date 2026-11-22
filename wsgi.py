@@ -16,7 +16,9 @@ try:
     auto_seed_if_empty()
     print("[WSGI Startup] Database initialization complete!")
 except Exception as e:
+    import traceback
     print(f"[WSGI Init Warning] Database check skipped or deferred: {e}")
+    traceback.print_exc()
 
 # Expose WSGI application object
 app = create_app()

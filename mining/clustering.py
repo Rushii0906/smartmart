@@ -66,51 +66,55 @@ def extract_rfm_features(country=None):
         where_sql += " AND co.CountryName = %s"
         params.append(country)
 
-    conn = get_pymysql_connection(include_db=True)
     try:
-        with conn.cursor() as cursor:
-            # Determine global dataset snapshot date (max transaction date)
-            cursor.execute("SELECT MAX(FullDate) AS max_date FROM Dim_Date;")
-            max_date_row = cursor.fetchone()
-            if not max_date_row or not max_date_row['max_date']:
-                return pd.DataFrame()
-            snapshot_date = max_date_row['max_date']
+        conn = get_pymysql_connection(include_db=True)
+        try:
+            with conn.cursor() as cursor:
+                # Determine global dataset snapshot date (max transaction date)
+                cursor.execute("SELECT MAX(FullDate) AS max_date FROM Dim_Date;")
+                max_date_row = cursor.fetchone()
+                if not max_date_row or not max_date_row['max_date']:
+                    return pd.DataFrame()
+                snapshot_date = max_date_row['max_date']
 
-            query = f"""
-                SELECT 
-                    c.Customer_ID,
-                    c.CustomerCode,
-                    MAX(d.FullDate) AS last_date,
-                    COUNT(DISTINCT f.InvoiceNo) AS frequency,
-                    ROUND(SUM(f.TotalAmount), 2) AS monetary
-                FROM Fact_Sales f
-                JOIN Dim_Customer c ON f.Customer_ID = c.Customer_ID
-                JOIN Dim_Date d ON f.Date_ID = d.Date_ID
-                JOIN Dim_Country co ON f.Country_ID = co.Country_ID
-                {where_sql}
-                GROUP BY c.Customer_ID, c.CustomerCode;
-            """
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-    finally:
-        conn.close()
+                query = f"""
+                    SELECT 
+                        c.Customer_ID,
+                        c.CustomerCode,
+                        MAX(d.FullDate) AS last_date,
+                        COUNT(DISTINCT f.InvoiceNo) AS frequency,
+                        ROUND(SUM(f.TotalAmount), 2) AS monetary
+                    FROM Fact_Sales f
+                    JOIN Dim_Customer c ON f.Customer_ID = c.Customer_ID
+                    JOIN Dim_Date d ON f.Date_ID = d.Date_ID
+                    JOIN Dim_Country co ON f.Country_ID = co.Country_ID
+                    {where_sql}
+                    GROUP BY c.Customer_ID, c.CustomerCode;
+                """
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+        finally:
+            conn.close()
 
-    if not rows:
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+
+        # Calculate Recency in days relative to snapshot_date (+1 to avoid 0 days)
+        df['last_date'] = pd.to_datetime(df['last_date'])
+        snap_dt = pd.to_datetime(snapshot_date)
+        df['recency'] = (snap_dt - df['last_date']).dt.days + 1
+
+        # Ensure numeric columns and filter non-positive spend
+        df['frequency'] = pd.to_numeric(df['frequency'], errors='coerce').fillna(1).astype(int)
+        df['monetary'] = pd.to_numeric(df['monetary'], errors='coerce').fillna(0.0).astype(float)
+        df = df[df['monetary'] > 0].copy()
+
+        return df
+    except Exception as e:
+        print(f"[RFM Extraction Warning] Unable to query RFM data (tables may be uninitialized): {e}")
         return pd.DataFrame()
-
-    df = pd.DataFrame(rows)
-
-    # Calculate Recency in days relative to snapshot_date (+1 to avoid 0 days)
-    df['last_date'] = pd.to_datetime(df['last_date'])
-    snap_dt = pd.to_datetime(snapshot_date)
-    df['recency'] = (snap_dt - df['last_date']).dt.days + 1
-
-    # Ensure numeric columns and filter non-positive spend
-    df['frequency'] = pd.to_numeric(df['frequency'], errors='coerce').fillna(1).astype(int)
-    df['monetary'] = pd.to_numeric(df['monetary'], errors='coerce').fillna(0.0).astype(float)
-    df = df[df['monetary'] > 0].copy()
-
-    return df
 
 
 def assign_meaningful_labels(centroids_df):

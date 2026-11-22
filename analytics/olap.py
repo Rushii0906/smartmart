@@ -524,31 +524,40 @@ def get_top_products_chart(limit=10):
 
 def get_filter_options():
     """Fetches dynamic dimension members for dropdown filters in the frontend."""
-    conn = get_pymysql_connection(include_db=True)
     try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT DISTINCT CountryName FROM Dim_Country ORDER BY CountryName;")
-            countries = [r['CountryName'] for r in cursor.fetchall()]
+        conn = get_pymysql_connection(include_db=True)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT DISTINCT CountryName FROM Dim_Country ORDER BY CountryName;")
+                countries = [r['CountryName'] for r in cursor.fetchall()]
 
-            cursor.execute("SELECT DISTINCT YearNumber FROM Dim_Date ORDER BY YearNumber;")
-            years = [r['YearNumber'] for r in cursor.fetchall()]
+                cursor.execute("SELECT DISTINCT YearNumber FROM Dim_Date ORDER BY YearNumber;")
+                years = [r['YearNumber'] for r in cursor.fetchall()]
 
-            cursor.execute("SELECT DISTINCT MonthNumber, MonthName FROM Dim_Date ORDER BY MonthNumber;")
-            months = cursor.fetchall()
+                cursor.execute("SELECT DISTINCT MonthNumber, MonthName FROM Dim_Date ORDER BY MonthNumber;")
+                months = cursor.fetchall()
 
-            cursor.execute("""
-                SELECT Product_ID, StockCode, COALESCE(Description, StockCode) AS Description 
-                FROM Dim_Product 
-                ORDER BY Description 
-                LIMIT 50;
-            """)
-            top_products = cursor.fetchall()
+                cursor.execute("""
+                    SELECT Product_ID, StockCode, COALESCE(Description, StockCode) AS Description 
+                    FROM Dim_Product 
+                    ORDER BY Description 
+                    LIMIT 50;
+                """)
+                top_products = cursor.fetchall()
 
+            return {
+                'countries': countries,
+                'years': years,
+                'months': months,
+                'products': top_products
+            }
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[Filter Options Warning] Falling back to empty filters: {e}")
         return {
-            'countries': countries,
-            'years': years,
-            'months': months,
-            'products': top_products
+            'countries': [],
+            'years': [],
+            'months': [],
+            'products': []
         }
-    finally:
-        conn.close()
