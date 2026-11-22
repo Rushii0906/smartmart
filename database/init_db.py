@@ -21,27 +21,41 @@ def run_schema_file(schema_path=None):
         schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
 
     print(f"[*] Ensuring database exists...")
-    created, msg = create_database_if_not_exists()
-    if not created:
-        print(f"[!] Warning on DB check: {msg}")
+    try:
+        create_database_if_not_exists()
+    except Exception as e:
+        print(f"[!] Note on DB check: {e}")
 
-    print(f"[*] Reading schema file from: {schema_path}")
-    with open(schema_path, 'r', encoding='utf-8') as f:
-        sql_content = f.read()
-
-    # Split SQL file into individual statements by semicolon
-    statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
-
-    print(f"[*] Executing {len(statements)} SQL statements...")
     conn = get_pymysql_connection(include_db=True)
     try:
+        # Check if tables already exist to prevent unnecessary drops
+        if tables_exist(conn):
+            print("[OK] Star Schema tables already exist in database.")
+            verify_tables(conn)
+            return True
+
+        print(f"[*] Reading schema file from: {schema_path}")
+        with open(schema_path, 'r', encoding='utf-8') as f:
+            sql_content = f.read()
+
+        # Split SQL file into individual statements by semicolon
+        raw_statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
+
+        print(f"[*] Executing schema statements in database '{Config.DB_NAME}'...")
         with conn.cursor() as cursor:
-            for i, stmt in enumerate(statements, 1):
-                # Skip comments-only statements
+            for i, stmt in enumerate(raw_statements, 1):
+                # Clean comment lines
                 lines = [line.strip() for line in stmt.splitlines() if line.strip() and not line.strip().startswith('--')]
                 if not lines:
                     continue
-                clean_stmt = "\n".join(lines)
+                clean_stmt = "\n".join(lines).strip()
+
+                # Skip CREATE DATABASE and USE statements so tables are created
+                # directly in the currently active database (e.g. defaultdb, smartmart_dw)
+                upper_stmt = clean_stmt.upper()
+                if upper_stmt.startswith('CREATE DATABASE') or upper_stmt.startswith('USE '):
+                    continue
+
                 try:
                     cursor.execute(clean_stmt)
                 except Exception as stmt_err:
@@ -53,6 +67,18 @@ def run_schema_file(schema_path=None):
         return True
     finally:
         conn.close()
+
+
+def tables_exist(conn):
+    """Checks whether all 5 Star Schema tables already exist."""
+    expected_tables = {'dim_product', 'dim_customer', 'dim_date', 'dim_country', 'fact_sales'}
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SHOW TABLES;")
+            tables = {row[list(row.keys())[0]].lower() for row in cursor.fetchall()}
+        return expected_tables.issubset(tables)
+    except Exception:
+        return False
 
 
 def verify_tables(conn):

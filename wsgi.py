@@ -10,7 +10,11 @@ from database.db_connection import create_database_if_not_exists
 
 # Initialize database schema if not present on container boot
 try:
-    create_database_if_not_exists()
+    from database.init_db import run_schema_file, auto_seed_if_empty
+    print("[WSGI Startup] Ensuring Star Schema tables exist in database...")
+    run_schema_file()
+    auto_seed_if_empty()
+    print("[WSGI Startup] Database initialization complete!")
 except Exception as e:
     print(f"[WSGI Init Warning] Database check skipped or deferred: {e}")
 
