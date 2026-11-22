@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # MySQL 8.0 Data Warehouse Service
+  db:
+    image: mysql:8.0
+    container_name: smartmart_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-smartmart_root_pass_2026}
+      MYSQL_DATABASE: ${DB_NAME:-smartmart_dw}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_dw_data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-smartmart_root_pass_2026}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - smartmart_net
+
+  # SmartMart Analytics Web Application Service
+  web:
+    build: .
+    container_name: smartmart_web
+    restart: always
+    ports:
+      - "5000:5000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-smartmart_root_pass_2026}
+      DB_NAME: ${DB_NAME:-smartmart_dw}
+      SECRET_KEY: ${SECRET_KEY:-smartmart_super_secure_production_key_2026}
+      FLASK_ENV: production
+      PORT: 5000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data/raw:/app/data/raw
+      - ./data/processed:/app/data/processed
+    networks:
+      - smartmart_net
+
+volumes:
+  mysql_dw_data:
+    driver: local
+
+networks:
+  smartmart_net:
+    driver: bridge

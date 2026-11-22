@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}OLAP Analytics{% endblock %}
+{% block page_title %}Multidimensional OLAP Cube Operations{% endblock %}
+
+{% block content %}
+<!-- OLAP Operations Navigation Pills -->
+<div class="dashboard-card mb-4">
+    <ul class="nav nav-pills nav-fill gap-2" id="olapTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_op == 'rollup' %}active{% endif %} fw-semibold" id="rollup-tab" data-bs-toggle="tab" data-bs-target="#rollup-pane" type="button" role="tab">
+                <i class="bi bi-arrow-up-circle me-1"></i>1. Roll-Up (Summarize)
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_op == 'drilldown' %}active{% endif %} fw-semibold" id="drilldown-tab" data-bs-toggle="tab" data-bs-target="#drilldown-pane" type="button" role="tab">
+                <i class="bi bi-arrow-down-circle me-1"></i>2. Drill-Down (Detail)
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_op == 'slice' %}active{% endif %} fw-semibold" id="slice-tab" data-bs-toggle="tab" data-bs-target="#slice-pane" type="button" role="tab">
+                <i class="bi bi-scissors me-1"></i>3. Slice (Fix 1 Dimension)
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link {% if active_op == 'dice' %}active{% endif %} fw-semibold" id="dice-tab" data-bs-toggle="tab" data-bs-target="#dice-pane" type="button" role="tab">
+                <i class="bi bi-grid-3x3 me-1"></i>4. Dice (Sub-Cube Filter)
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content pt-4" id="olapTabsContent">
+        <!-- 1. ROLL-UP TAB -->
+        <div class="tab-pane fade {% if active_op == 'rollup' %}show active{% endif %}" id="rollup-pane" role="tabpanel">
+            <form action="{{ url_for('olap.olap_view') }}" method="GET" class="row g-3 align-items-end">
+                <input type="hidden" name="op" value="rollup">
+                <div class="col-md-5">
+                    <label class="form-label small fw-semibold">Roll-Up Aggregation Level</label>
+                    <select class="form-select" name="rollup_level">
+                        <option value="monthly" {% if rollup_level == 'monthly' %}selected{% endif %}>Monthly Aggregation (Day -> Month)</option>
+                        <option value="quarterly" {% if rollup_level == 'quarterly' %}selected{% endif %}>Quarterly Aggregation (Month -> Quarter)</option>
+                        <option value="yearly" {% if rollup_level == 'yearly' %}selected{% endif %}>Yearly Aggregation (Quarter -> Year)</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Filter by Year (Optional)</label>
+                    <select class="form-select" name="rollup_year">
+                        <option value="">All Years</option>
+                        {% for y in filter_options.years %}
+                        <option value="{{ y }}" {% if rollup_year == y|string %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary-custom w-100">
+                        <i class="bi bi-funnel me-1"></i>Apply Roll-Up
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 2. DRILL-DOWN TAB -->
+        <div class="tab-pane fade {% if active_op == 'drilldown' %}show active{% endif %}" id="drilldown-pane" role="tabpanel">
+            <form action="{{ url_for('olap.olap_view') }}" method="GET" class="row g-3 align-items-end">
+                <input type="hidden" name="op" value="drilldown">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Starting Year</label>
+                    <select class="form-select" name="drill_year" required>
+                        {% for y in filter_options.years %}
+                        <option value="{{ y }}" {% if drill_year == y|string %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Quarter Level</label>
+                    <select class="form-select" name="drill_quarter">
+                        <option value="">(All Quarters)</option>
+                        <option value="1" {% if drill_quarter == '1' %}selected{% endif %}>Quarter 1</option>
+                        <option value="2" {% if drill_quarter == '2' %}selected{% endif %}>Quarter 2</option>
+                        <option value="3" {% if drill_quarter == '3' %}selected{% endif %}>Quarter 3</option>
+                        <option value="4" {% if drill_quarter == '4' %}selected{% endif %}>Quarter 4</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Month Level (Daily Breakdown)</label>
+                    <select class="form-select" name="drill_month">
+                        <option value="">(None - High Level)</option>
+                        {% for m in filter_options.months %}
+                        <option value="{{ m.MonthNumber }}" {% if drill_month == m.MonthNumber|string %}selected{% endif %}>{{ m.MonthName }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary-custom w-100">
+                        <i class="bi bi-zoom-in me-1"></i>Drill Down
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 3. SLICE TAB -->
+        <div class="tab-pane fade {% if active_op == 'slice' %}show active{% endif %}" id="slice-pane" role="tabpanel">
+            <form action="{{ url_for('olap.olap_view') }}" method="GET" class="row g-3 align-items-end">
+                <input type="hidden" name="op" value="slice">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Select Dimension to Slice</label>
+                    <select class="form-select" name="slice_dim" id="sliceDimSelect" onchange="toggleSliceInputs()">
+                        <option value="country" {% if slice_dim == 'country' %}selected{% endif %}>Country Dimension (Dim_Country)</option>
+                        <option value="year" {% if slice_dim == 'year' %}selected{% endif %}>Year Dimension (Dim_Date)</option>
+                    </select>
+                </div>
+                <div class="col-md-5" id="sliceCountryContainer">
+                    <label class="form-label small fw-semibold">Fixed Country Value</label>
+                    <select class="form-select" name="slice_val_country">
+                        {% for c in filter_options.countries %}
+                        <option value="{{ c }}" {% if slice_val == c %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-5 d-none" id="sliceYearContainer">
+                    <label class="form-label small fw-semibold">Fixed Year Value</label>
+                    <select class="form-select" name="slice_val_year">
+                        {% for y in filter_options.years %}
+                        <option value="{{ y }}" {% if slice_val == y|string %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary-custom w-100">
+                        <i class="bi bi-funnel me-1"></i>Extract Slice
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- 4. DICE TAB -->
+        <div class="tab-pane fade {% if active_op == 'dice' %}show active{% endif %}" id="dice-pane" role="tabpanel">
+            <form action="{{ url_for('olap.olap_view') }}" method="GET" class="row g-3 align-items-end">
+                <input type="hidden" name="op" value="dice">
+                <div class="col-md-4">
+                    <label class="form-label small fw-semibold">Filter Countries (Multiple)</label>
+                    <select class="form-select" name="dice_countries" multiple size="3">
+                        {% for c in filter_options.countries %}
+                        <option value="{{ c }}" {% if c in selected_dice_countries %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Filter Years</label>
+                    <select class="form-select" name="dice_years" multiple size="3">
+                        {% for y in filter_options.years %}
+                        <option value="{{ y }}" {% if y|string in selected_dice_years %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-semibold">Min Line Amount ($)</label>
+                    <input type="number" step="0.5" class="form-control" name="dice_min_rev" value="{{ dice_min_rev or 10.0 }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary-custom w-100">
+                        <i class="bi bi-grid-3x3 me-1"></i>Dice Cube
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- OLAP Results Presentation -->
+<div class="row g-4">
+    <!-- Chart Visualisation of Current OLAP Results -->
+    <div class="col-lg-12">
+        <div class="dashboard-card mb-4">
+            <div class="card-title-custom">
+                <span>
+                    <i class="bi bi-bar-chart-line text-primary me-2"></i>
+                    OLAP Aggregation Visualization: 
+                    <span class="text-primary text-uppercase">{{ active_op }}</span>
+                </span>
+                <span class="badge bg-light text-secondary border">Total Rows: {{ results|length }}</span>
+            </div>
+            <div style="height: 280px;">
+                <canvas id="olapChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabular Data View -->
+    <div class="col-lg-12">
+        <div class="dashboard-card">
+            <div class="card-title-custom">
+                <span><i class="bi bi-table text-primary me-2"></i>Aggregated Data Cube Slice</span>
+            </div>
+
+            <div class="table-responsive rounded border" style="max-height: 400px;">
+                <table class="table custom-table table-sm">
+                    <thead>
+                        <tr>
+                            {% if active_op == 'rollup' %}
+                                <th>Period / Dimension</th>
+                                <th class="text-end">Completed Invoices</th>
+                                <th class="text-end">Units Sold</th>
+                                <th class="text-end">Total Revenue ($)</th>
+                                <th class="text-end">Avg Line ($)</th>
+                            {% elif active_op == 'drilldown' %}
+                                <th>Granularity Level</th>
+                                <th class="text-end">Total Invoices</th>
+                                <th class="text-end">Units Sold</th>
+                                <th class="text-end">Revenue ($)</th>
+                            {% elif active_op == 'slice' %}
+                                <th>Timeline / Category</th>
+                                <th class="text-end">Invoices</th>
+                                <th class="text-end">Units Sold</th>
+                                <th class="text-end">Total Revenue ($)</th>
+                            {% else %}
+                                <th>Country</th>
+                                <th>Period</th>
+                                <th>Stock Code</th>
+                                <th>Description</th>
+                                <th class="text-end">Quantity</th>
+                                <th class="text-end">Revenue ($)</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr>
+                            {% if active_op == 'rollup' %}
+                                <td class="fw-semibold text-dark">{{ r.period_label or r.YearNumber }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_invoices) }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_quantity) }}</td>
+                                <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.total_revenue) }}</td>
+                                <td class="text-end text-muted">${{ "{:,.2f}".format(r.avg_line_value) }}</td>
+                            {% elif active_op == 'drilldown' %}
+                                <td class="fw-semibold text-dark">{{ r.FullDate or r.MonthName or r.quarter_label }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_invoices) }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_quantity) }}</td>
+                                <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.total_revenue) }}</td>
+                            {% elif active_op == 'slice' %}
+                                <td class="fw-semibold text-dark">{{ r.CountryName or (r.MonthName ~ ' ' ~ r.YearNumber) }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_invoices or 0) }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_quantity) }}</td>
+                                <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.total_revenue) }}</td>
+                            {% else %}
+                                <td class="fw-semibold">{{ r.CountryName }}</td>
+                                <td>{{ r.MonthName }} {{ r.YearNumber }}</td>
+                                <td><code>{{ r.StockCode }}</code></td>
+                                <td class="text-truncate" style="max-width: 250px;">{{ r.Description }}</td>
+                                <td class="text-end">{{ "{:,}".format(r.total_quantity) }}</td>
+                                <td class="text-end fw-bold text-success">${{ "{:,.2f}".format(r.total_revenue) }}</td>
+                            {% endif %}
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">No data records match the specified OLAP parameters.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleSliceInputs() {
+        const sel = document.getElementById('sliceDimSelect').value;
+        const cContainer = document.getElementById('sliceCountryContainer');
+        const yContainer = document.getElementById('sliceYearContainer');
+        if (sel === 'country') {
+            cContainer.classList.remove('d-none');
+            yContainer.classList.add('d-none');
+        } else {
+            cContainer.classList.add('d-none');
+            yContainer.classList.remove('d-none');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        toggleSliceInputs();
+
+        // Initialize OLAP chart based on results passed from Flask
+        const chartData = {{ olap_chart | tojson }};
+        if (chartData && chartData.labels && chartData.labels.length > 0) {
+            createBarChart('olapChart', chartData.labels, chartData.revenues, 'Revenue ($)', false);
+        }
+    });
+</script>
+{% endblock %}

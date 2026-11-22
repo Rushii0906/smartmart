@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Customer Segmentation{% endblock %}
+{% block page_title %}K-Means Customer Segmentation (RFM Analysis){% endblock %}
+
+{% block content %}
+<!-- Configuration Card -->
+<div class="dashboard-card mb-4">
+    <div class="card-title-custom">
+        <span><i class="bi bi-people text-primary me-2"></i>Configure K-Means Clustering Parameters</span>
+        <span class="badge bg-primary-subtle text-primary border">StandardScaler • K-Means++</span>
+    </div>
+
+    <form action="{{ url_for('mining.clustering_view') }}" method="POST" class="form-with-loading" data-loading-message="Computing customer RFM vectors, standardizing features, and clustering...">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-5">
+                <label for="n_clusters" class="form-label small fw-semibold">
+                    Number of Clusters (k): <span id="k_val" class="text-primary fw-bold">{{ k_clusters or 3 }}</span>
+                </label>
+                <input type="range" class="form-range" id="n_clusters" name="n_clusters" min="2" max="6" step="1" value="{{ k_clusters or 3 }}" oninput="document.getElementById('k_val').innerText = this.value">
+                <div class="form-text small">Standard academic default is k = 3 tiers</div>
+            </div>
+
+            <div class="col-md-4">
+                <label for="country_filter" class="form-label small fw-semibold">Country Filter (Optional)</label>
+                <select class="form-select" id="country_filter" name="country">
+                    <option value="">All Countries</option>
+                    {% for c in countries %}
+                    <option value="{{ c }}" {% if selected_country == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text small">Segments customers by geographic market</div>
+            </div>
+
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary-custom w-100 py-2">
+                    <i class="bi bi-diagram-2 me-1"></i>Run K-Means Segmentation
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Evaluation Metrics & Overall Stats -->
+{% if results %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="p-3 rounded bg-light border text-center">
+            <div class="small text-muted text-uppercase fw-semibold">Customers Clustered</div>
+            <div class="h3 fw-bold text-dark my-1">{{ "{:,}".format(results.metrics.total_customers_analyzed) }}</div>
+            <div class="small text-muted">Excludes Guest/Unknown Member</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded bg-light border text-center">
+            <div class="small text-muted text-uppercase fw-semibold">Number of Segments (k)</div>
+            <div class="h3 fw-bold text-primary my-1">{{ results.parameters.n_clusters }}</div>
+            <div class="small text-muted">Partitioned Clusters</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded bg-light border text-center">
+            <div class="small text-muted text-uppercase fw-semibold">Inertia (WCSS)</div>
+            <div class="h3 fw-bold text-secondary my-1">{{ results.metrics.inertia_wcss }}</div>
+            <div class="small text-muted">Within-Cluster Sum of Squares</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="p-3 rounded bg-light border text-center">
+            <div class="small text-muted text-uppercase fw-semibold">Silhouette Score</div>
+            <div class="h3 fw-bold text-success my-1">{{ results.metrics.silhouette_score }}</div>
+            <div class="small text-muted">Cluster Separation Quality (-1 to +1)</div>
+        </div>
+    </div>
+</div>
+
+<!-- Cluster Profile Summary Table -->
+<div class="dashboard-card mb-4">
+    <div class="card-title-custom">
+        <span><i class="bi bi-table text-primary me-2"></i>Derived Customer Segments & Centroid Profiles</span>
+        <span class="badge bg-light text-secondary border">Dynamic Label Assignment</span>
+    </div>
+
+    <div class="table-responsive rounded border">
+        <table class="table custom-table table-sm">
+            <thead>
+                <tr>
+                    <th>Cluster Segment Label</th>
+                    <th class="text-center">Customer Count</th>
+                    <th class="text-center">Customer Share</th>
+                    <th class="text-end">Mean Recency</th>
+                    <th class="text-end">Mean Frequency</th>
+                    <th class="text-end">Mean Spend ($)</th>
+                    <th class="text-end">Total Cluster Revenue ($)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in results.cluster_summary %}
+                <tr>
+                    <td class="fw-bold text-dark">
+                        <span class="badge 
+                            {% if 'Champions' in c.label or 'Tier 1' in c.label %}badge-champion
+                            {% elif 'Loyal' in c.label or 'Regular' in c.label %}badge-loyal
+                            {% else %}badge-atrisk{% endif %} me-2">
+                            Cluster {{ c.cluster_id }}
+                        </span>
+                        {{ c.label }}
+                    </td>
+                    <td class="text-center fw-semibold">{{ "{:,}".format(c.customer_count) }}</td>
+                    <td class="text-center text-muted">{{ c.customer_percentage }}%</td>
+                    <td class="text-end font-monospace">{{ c.avg_recency_days }} days</td>
+                    <td class="text-end font-monospace">{{ c.avg_frequency_orders }} orders</td>
+                    <td class="text-end font-monospace">${{ "{:,.2f}".format(c.avg_monetary_spend) }}</td>
+                    <td class="text-end font-monospace fw-bold text-success">${{ "{:,.2f}".format(c.total_revenue) }} ({{ c.revenue_percentage }}%)</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Charts Row: Distribution Doughnut & 2D RFM Scatter Plot -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-5">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-pie-chart text-primary me-2"></i>Segment Customer Distribution</span>
+            </div>
+            <div style="height: 280px;">
+                <canvas id="clusterDistChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-scatter text-primary me-2"></i>Customer RFM Scatter Plot (Recency vs Spend)</span>
+            </div>
+            <div style="height: 280px;">
+                <canvas id="rfmScatterChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Educational RFM Guide -->
+<h6 class="fw-semibold small text-uppercase text-muted mb-3">Academic Syllabus Concepts: RFM Segmentation & Distance Scaling</h6>
+<div class="row g-3">
+    {% for key, exp in explanations.items() %}
+    <div class="col-md-3">
+        <div class="dashboard-card h-100 mb-0">
+            <h6 class="fw-bold mb-2 text-dark">{{ exp.name }}</h6>
+            <p class="small text-primary mb-1"><strong>Definition:</strong> {{ exp.definition }}</p>
+            <p class="small text-muted mb-0">{{ exp.interpretation }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        {% if results %}
+        // 1. Doughnut distribution chart
+        const distData = {{ results.charts.distribution | tojson }};
+        createDoughnutChart('clusterDistChart', distData.labels, distData.counts);
+
+        // 2. Scatter chart
+        const scatterPoints = {{ results.charts.scatter_points | tojson }};
+        createScatterChart('rfmScatterChart', scatterPoints);
+        {% endif %}
+    });
+</script>
+{% endblock %}

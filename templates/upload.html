@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Dataset Management{% endblock %}
+{% block page_title %}Dataset Upload & Schema Validation{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Upload Form Card -->
+    <div class="col-lg-5">
+        <div class="dashboard-card">
+            <div class="card-title-custom">
+                <span><i class="bi bi-cloud-arrow-up text-primary me-2"></i>Upload Retail Dataset</span>
+                <span class="badge bg-primary-subtle text-primary border">Pandas Ingestion</span>
+            </div>
+            
+            <p class="text-muted small">
+                Upload raw transaction records in <code>.xlsx</code>, <code>.xls</code>, or <code>.csv</code> format. 
+                Compatible with the <strong>UCI Online Retail</strong> schema.
+            </p>
+
+            <form action="{{ url_for('data.upload') }}" method="POST" enctype="multipart/form-data" class="form-with-loading" data-loading-message="Validating dataset schema and columns...">
+                <div class="mb-3">
+                    <label for="dataset_file" class="form-label fw-semibold small">Choose Data File</label>
+                    <input type="file" class="form-control" id="dataset_file" name="dataset_file" accept=".xlsx,.xls,.csv" required>
+                    <div class="form-text small">Maximum upload limit: 32 MB. Supported: .xlsx, .xls, .csv</div>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary-custom">
+                        <i class="bi bi-check2-circle me-1"></i>Upload & Validate Schema
+                    </button>
+                </div>
+            </form>
+
+            <hr class="my-4">
+
+            <!-- Expected Schema Columns Checklist -->
+            <h6 class="fw-semibold small text-uppercase text-muted mb-2">Mandatory Schema Columns</h6>
+            <div class="row g-2">
+                {% for col in ['InvoiceNo', 'StockCode', 'Description', 'Quantity', 'InvoiceDate', 'UnitPrice', 'CustomerID', 'Country'] %}
+                <div class="col-6">
+                    <div class="d-flex align-items-center gap-2 p-2 rounded bg-light border">
+                        <i class="bi bi-check-circle-fill text-success small"></i>
+                        <span class="small font-monospace text-dark">{{ col }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Dataset Preview / Current Status Card -->
+    <div class="col-lg-7">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-table text-primary me-2"></i>Active Dataset Preview</span>
+                {% if preview %}
+                    <span class="badge bg-success-subtle text-success border">Total Rows: {{ "{:,}".format(preview.total_rows) }}</span>
+                {% else %}
+                    <span class="badge bg-secondary-subtle text-secondary border">No Preview</span>
+                {% endif %}
+            </div>
+
+            {% if preview %}
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="small text-muted">
+                        Displaying top <strong>{{ preview.rows|length }}</strong> rows (Memory: {{ preview.memory_usage_mb }} MB)
+                    </div>
+                    <a href="{{ url_for('etl.etl_view') }}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-arrow-repeat me-1"></i>Proceed to ETL Cleaning
+                    </a>
+                </div>
+
+                <div class="table-responsive rounded border" style="max-height: 420px;">
+                    <table class="table custom-table table-sm">
+                        <thead>
+                            <tr>
+                                {% for col in preview.columns %}
+                                <th>{{ col }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in preview.rows %}
+                            <tr>
+                                {% for col in preview.columns %}
+                                <td>{{ row[col] }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-file-earmark-spreadsheet text-muted" style="font-size: 3rem;"></i>
+                    <h6 class="mt-3 text-muted">No dataset uploaded yet</h6>
+                    <p class="small text-muted">Upload an Excel or CSV file on the left to view validation results and preview rows.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

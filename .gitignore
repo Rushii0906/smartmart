@@ -1,0 +1,33 @@
+# Environment variables & local secrets
+.env
+.env.local
+*.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+env/
+.venv/
+ENV/
+
+# IDE & Editor metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS temporary files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log

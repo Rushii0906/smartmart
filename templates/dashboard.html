@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Executive Retail Dashboard{% endblock %}
+
+{% block content %}
+<!-- KPI Metric Cards Grid -->
+<div class="row g-3 mb-4">
+    <!-- 1. Total Revenue -->
+    <div class="col-xl col-md-6">
+        <div class="dashboard-card kpi-card mb-0">
+            <div class="kpi-icon-wrapper icon-purple">
+                <i class="bi bi-currency-dollar"></i>
+            </div>
+            <div class="kpi-details">
+                <div class="kpi-label">Total Revenue</div>
+                <div class="kpi-value">${{ "{:,.2f}".format(kpis.total_revenue) }}</div>
+                <div class="kpi-hint text-success"><i class="bi bi-graph-up-arrow me-1"></i>Warehouse Net Revenue</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Total Invoices -->
+    <div class="col-xl col-md-6">
+        <div class="dashboard-card kpi-card mb-0">
+            <div class="kpi-icon-wrapper icon-blue">
+                <i class="bi bi-receipt"></i>
+            </div>
+            <div class="kpi-details">
+                <div class="kpi-label">Completed Orders</div>
+                <div class="kpi-value">{{ "{:,}".format(kpis.total_invoices) }}</div>
+                <div class="kpi-hint text-muted">Distinct Invoice Transactions</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Total Quantity Sold -->
+    <div class="col-xl col-md-6">
+        <div class="dashboard-card kpi-card mb-0">
+            <div class="kpi-icon-wrapper icon-green">
+                <i class="bi bi-box-seam"></i>
+            </div>
+            <div class="kpi-details">
+                <div class="kpi-label">Total Units Sold</div>
+                <div class="kpi-value">{{ "{:,}".format(kpis.total_quantity) }}</div>
+                <div class="kpi-hint text-muted">Aggregated Quantity</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Unique Customers -->
+    <div class="col-xl col-md-6">
+        <div class="dashboard-card kpi-card mb-0">
+            <div class="kpi-icon-wrapper icon-amber">
+                <i class="bi bi-people"></i>
+            </div>
+            <div class="kpi-details">
+                <div class="kpi-label">Unique Customers</div>
+                <div class="kpi-value">{{ "{:,}".format(kpis.registered_customers) }}</div>
+                <div class="kpi-hint text-muted">Registered Customer IDs</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Average Invoice Value -->
+    <div class="col-xl col-md-6">
+        <div class="dashboard-card kpi-card mb-0">
+            <div class="kpi-icon-wrapper icon-rose">
+                <i class="bi bi-cart-check"></i>
+            </div>
+            <div class="kpi-details">
+                <div class="kpi-label">Avg Order Value</div>
+                <div class="kpi-value">${{ "{:,.2f}".format(kpis.avg_invoice_value) }}</div>
+                <div class="kpi-hint text-muted">Mean Value Per Basket</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 1: Monthly Trend Line Chart & Customer Segment Doughnut Chart -->
+<div class="row g-4 mb-4">
+    <div class="col-lg-8">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-graph-up text-primary me-2"></i>Monthly Sales Revenue Trend</span>
+                <span class="badge bg-light text-secondary border">OLAP Roll-up</span>
+            </div>
+            <div style="height: 320px;">
+                <canvas id="monthlyTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-pie-chart text-primary me-2"></i>Customer Segments</span>
+                <span class="badge bg-light text-secondary border">K-Means RFM</span>
+            </div>
+            <div style="height: 280px;">
+                <canvas id="customerSegmentChart"></canvas>
+            </div>
+            <div class="text-center mt-2 small text-muted">Distribution of customer spend & loyalty tiers</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 2: Country Revenue Bar Chart & Top Products Bar Chart -->
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-globe text-primary me-2"></i>Country-wise Revenue Distribution</span>
+                <span class="badge bg-light text-secondary border">Geographic Slice</span>
+            </div>
+            <div style="height: 300px;">
+                <canvas id="countryRevenueChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-trophy text-primary me-2"></i>Top 10 Revenue-Generating Products</span>
+                <span class="badge bg-light text-secondary border">Product Dimension</span>
+            </div>
+            <div style="height: 300px;">
+                <canvas id="topProductsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // 1. Monthly Revenue Trend Chart
+        const monthlyData = {{ monthly_chart | tojson }};
+        createLineChart('monthlyTrendChart', monthlyData.labels, monthlyData.revenues, 'Revenue ($)');
+
+        // 2. Customer Segmentation Doughnut Chart
+        const segmentData = {{ segment_chart | tojson }};
+        createDoughnutChart('customerSegmentChart', segmentData.labels, segmentData.counts);
+
+        // 3. Country Revenue Chart
+        const countryData = {{ country_chart | tojson }};
+        createBarChart('countryRevenueChart', countryData.labels, countryData.revenues, 'Revenue ($)', true);
+
+        // 4. Top Products Chart
+        const productData = {{ product_chart | tojson }};
+        createBarChart('topProductsChart', productData.labels, productData.revenues, 'Revenue ($)', false);
+    });
+</script>
+{% endblock %}

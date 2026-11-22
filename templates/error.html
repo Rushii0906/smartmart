@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}Error {{ error_code }} - SmartMart Analytics{% endblock %}
+{% block page_title %}System Notification{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-5">
+    <div class="col-lg-6 col-md-8 text-center">
+        <div class="card border-0 shadow-sm rounded-4 p-5">
+            <div class="mb-4">
+                <span class="display-1 fw-bold text-danger">{{ error_code }}</span>
+            </div>
+            <h3 class="fw-bold mb-3">Notice</h3>
+            <p class="text-secondary mb-4 fs-6">
+                {{ error_msg }}
+            </p>
+            <div>
+                <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary px-4 py-2 rounded-3 shadow-sm">
+                    <i class="bi bi-house-door me-2"></i>Return to Executive Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

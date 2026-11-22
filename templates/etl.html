@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}ETL Processing{% endblock %}
+{% block page_title %}ETL Pipeline Execution & Cleaning Summary{% endblock %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <!-- ETL Trigger Card -->
+    <div class="col-lg-5">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-gear-wide-connected text-primary me-2"></i>Run ETL Pipeline</span>
+                <span class="badge bg-primary-subtle text-primary border">Extract • Transform • Load</span>
+            </div>
+
+            <p class="text-muted small">
+                Executes the three-stage data warehouse ETL pipeline: extracts raw retail transactions, 
+                enforces DM&DW cleaning rules, derives additive measures (<code>TotalAmount</code>), and 
+                loads the Star Schema with transactional integrity.
+            </p>
+
+            <form action="{{ url_for('etl.run_etl') }}" method="POST" class="form-with-loading" data-loading-message="Executing Extract, Transform, and Database Load stages...">
+                <div class="mb-3">
+                    <label for="sample_size" class="form-label fw-semibold small">Invoice Sampling Level</label>
+                    <select class="form-select" id="sample_size" name="sample_size">
+                        <option value="1000" selected>1,000 Complete Invoices (~20,000 Valid Lines - Recommended)</option>
+                        <option value="500">500 Complete Invoices (~10,000 Valid Lines)</option>
+                        <option value="2000">2,000 Complete Invoices (~40,000 Valid Lines)</option>
+                        <option value="all">Full Dataset (All Invoices - May take 1-2 mins)</option>
+                    </select>
+                    <div class="form-text small">
+                        Preserves complete invoices rather than random lines, guaranteeing correct Market Basket transactions.
+                    </div>
+                </div>
+
+                <div class="form-check form-switch mb-4">
+                    <input class="form-check-input" type="checkbox" role="switch" id="reset_dw" name="reset_dw" value="true" checked>
+                    <label class="form-check-label small fw-semibold" for="reset_dw">Reset Warehouse before loading (Clean Load)</label>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary-custom py-2">
+                        <i class="bi bi-play-circle-fill me-2"></i>Execute Complete ETL Pipeline
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Live Data Warehouse Counts -->
+    <div class="col-lg-7">
+        <div class="dashboard-card h-100">
+            <div class="card-title-custom">
+                <span><i class="bi bi-database-check text-success me-2"></i>Warehouse Dimensional Inventory</span>
+                <span class="badge bg-success-subtle text-success border">Star Schema Live</span>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-sm-6">
+                    <div class="p-3 rounded border bg-light">
+                        <div class="small text-muted text-uppercase fw-semibold">Central Fact Table</div>
+                        <div class="h3 fw-bold text-dark my-1">{{ "{:,}".format(counts.fact_sales) }}</div>
+                        <div class="small text-muted font-monospace">Fact_Sales</div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="p-3 rounded border bg-light">
+                        <div class="small text-muted text-uppercase fw-semibold">Product Dimension</div>
+                        <div class="h3 fw-bold text-dark my-1">{{ "{:,}".format(counts.dim_product) }}</div>
+                        <div class="small text-muted font-monospace">Dim_Product</div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="p-3 rounded border bg-light">
+                        <div class="small text-muted text-uppercase fw-semibold">Customer Dimension</div>
+                        <div class="h4 fw-bold text-dark my-1">{{ "{:,}".format(counts.dim_customer) }}</div>
+                        <div class="small text-muted font-monospace">Dim_Customer</div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="p-3 rounded border bg-light">
+                        <div class="small text-muted text-uppercase fw-semibold">Date Dimension</div>
+                        <div class="h4 fw-bold text-dark my-1">{{ "{:,}".format(counts.dim_date) }}</div>
+                        <div class="small text-muted font-monospace">Dim_Date (YYYYMMDD)</div>
+                    </div>
+                </div>
+                <div class="col-sm-4">
+                    <div class="p-3 rounded border bg-light">
+                        <div class="small text-muted text-uppercase fw-semibold">Country Dimension</div>
+                        <div class="h4 fw-bold text-dark my-1">{{ "{:,}".format(counts.dim_country) }}</div>
+                        <div class="small text-muted font-monospace">Dim_Country</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cleaning Summary & Rules Breakdown -->
+{% if report %}
+<div class="dashboard-card mb-4">
+    <div class="card-title-custom">
+        <span><i class="bi bi-shield-check text-primary me-2"></i>ETL Cleaning Summary & Statistics</span>
+        <span class="badge bg-info-subtle text-info border">Duration: {{ report.execution_time_seconds }}s</span>
+    </div>
+
+    <div class="row g-3 mb-4 text-center">
+        <div class="col-md-3">
+            <div class="p-3 rounded bg-light border">
+                <div class="small text-muted text-uppercase">Extracted Raw Rows</div>
+                <div class="h4 fw-bold text-dark my-1">{{ "{:,}".format(report.raw_record_count) }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="p-3 rounded bg-light border">
+                <div class="small text-muted text-uppercase">Cleaned Valid Rows</div>
+                <div class="h4 fw-bold text-success my-1">{{ "{:,}".format(report.cleaned_record_count) }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="p-3 rounded bg-light border">
+                <div class="small text-muted text-uppercase">Rejected Rows</div>
+                <div class="h4 fw-bold text-danger my-1">{{ "{:,}".format(report.rejected_record_count) }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="p-3 rounded bg-light border">
+                <div class="small text-muted text-uppercase">Loaded Fact Rows</div>
+                <div class="h4 fw-bold text-primary my-1">{{ "{:,}".format(report.loaded_fact_record_count) }}</div>
+            </div>
+        </div>
+    </div>
+
+    <h6 class="fw-semibold small text-uppercase text-muted mb-3">Cleaning Rules Log & Explanations</h6>
+    <div class="table-responsive rounded border">
+        <table class="table custom-table table-sm mb-0">
+            <thead>
+                <tr>
+                    <th>Rule Applied</th>
+                    <th>Academic & Business Rationale</th>
+                    <th class="text-end">Records Filtered</th>
+                    <th class="text-end">Records Modified</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in report.stages.transform.cleaning_rules %}
+                <tr>
+                    <td class="fw-semibold text-dark">{{ r.rule }}</td>
+                    <td class="text-muted">{{ r.description }}</td>
+                    <td class="text-end fw-bold {% if (r.records_removed|default(0)) > 0 %}text-danger{% else %}text-muted{% endif %}">
+                        {{ "{:,}".format(r.records_removed|default(0)) }}
+                    </td>
+                    <td class="text-end fw-bold {% if (r.records_modified|default(0)) > 0 %}text-warning{% else %}text-muted{% endif %}">
+                        {{ "{:,}".format(r.records_modified|default(0)) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
