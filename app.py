@@ -67,10 +67,11 @@ def create_app(config_class=Config):
 
     @app.errorhandler(500)
     def internal_error(error):
+        orig_err = getattr(error, 'original_exception', error)
         return render_template(
             'error.html',
             error_code=500,
-            error_msg="An internal server error occurred while processing the analytics operation."
+            error_msg=f"Analytics Engine Exception: {str(orig_err)}"
         ), 500
 
     return app

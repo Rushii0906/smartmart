@@ -20,7 +20,7 @@ from config import Config
 
 
 def get_pymysql_connection(include_db=True):
-    """Establishes a raw PyMySQL connection.
+    """Establishes a raw PyMySQL connection with automated SSL for cloud databases.
 
     Args:
         include_db (bool): If True, connects directly to the smartmart_dw database.
@@ -40,6 +40,14 @@ def get_pymysql_connection(include_db=True):
     }
     if include_db:
         params['database'] = Config.DB_NAME
+
+    # Enable SSL for remote cloud databases (e.g. Aiven, AWS RDS, Railway, TiDB Cloud)
+    is_remote = Config.DB_HOST not in ('localhost', '127.0.0.1') and not Config.DB_HOST.startswith(('192.168.', '10.', '172.'))
+    raw_url = getattr(Config, 'raw_db_url', '') or ''
+    has_ssl = 'ssl' in raw_url.lower()
+
+    if is_remote or has_ssl:
+        params['ssl'] = {'check_hostname': False}
 
     return pymysql.connect(**params)
 

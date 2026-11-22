@@ -58,11 +58,16 @@ class Config:
     
     # SQLAlchemy Connection Options
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    is_remote_host = DB_HOST not in ('localhost', '127.0.0.1') and not DB_HOST.startswith(('192.168.', '10.', '172.'))
+    has_ssl_flag = 'ssl' in (raw_db_url or '').lower()
+
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_recycle': 280,
         'pool_timeout': 20,
         'pool_pre_ping': True
     }
+    if is_remote_host or has_ssl_flag:
+        SQLALCHEMY_ENGINE_OPTIONS['connect_args'] = {'ssl': {'check_hostname': False}}
 
     # File Upload and Processing Paths
     UPLOAD_FOLDER = os.path.join(BASE_DIR, 'data', 'raw')

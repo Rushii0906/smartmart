@@ -42,7 +42,7 @@
 </div>
 
 <!-- Evaluation Metrics & Overall Stats -->
-{% if results %}
+{% if results and results.status == 'SUCCESS' %}
 <div class="row g-3 mb-4">
     <div class="col-md-3">
         <div class="p-3 rounded bg-light border text-center">
@@ -143,6 +143,16 @@
         </div>
     </div>
 </div>
+{% elif results and results.status == 'NO_DATA' %}
+<div class="alert alert-warning mb-4 rounded-3 p-3">
+    <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-info-circle-fill text-warning fs-5"></i>
+        <div>
+            <strong>Warehouse Unpopulated:</strong> {{ results.message }} 
+            Please visit the <a href="{{ url_for('etl.etl_view') }}" class="alert-link fw-semibold">ETL Pipeline</a> to execute the initial data load into the warehouse.
+        </div>
+    </div>
+</div>
 {% endif %}
 
 <!-- Educational RFM Guide -->
@@ -163,14 +173,18 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        {% if results %}
+        {% if results and results.status == 'SUCCESS' and results.charts %}
         // 1. Doughnut distribution chart
         const distData = {{ results.charts.distribution | tojson }};
-        createDoughnutChart('clusterDistChart', distData.labels, distData.counts);
+        if (distData && distData.labels && distData.labels.length > 0) {
+            createDoughnutChart('clusterDistChart', distData.labels, distData.counts);
+        }
 
         // 2. Scatter chart
         const scatterPoints = {{ results.charts.scatter_points | tojson }};
-        createScatterChart('rfmScatterChart', scatterPoints);
+        if (scatterPoints && scatterPoints.length > 0) {
+            createScatterChart('rfmScatterChart', scatterPoints);
+        }
         {% endif %}
     });
 </script>
