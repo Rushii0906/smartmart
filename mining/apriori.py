@@ -187,11 +187,11 @@ def run_apriori(min_support=0.6, min_confidence=0.3, min_lift=1.0, country=None,
     effective_support = min_support
     frequent_itemsets = apriori(df_encoded, min_support=effective_support, max_len=max_len, use_colnames=True)
 
-    # If min_support is configured high (e.g. 0.6 = 60%) and no itemsets qualify (since in real retail
+    # If min_support is high (e.g. 0.6 = 60%) and no itemsets qualify (since in real retail
     # datasets with thousands of SKUs, individual co-occurrence is typically 4%-15%),
     # intelligently adapt down to find the strongest frequent itemsets so rules are discovered
     note = None
-    if frequent_itemsets.empty and 0.05 < min_support <= 0.85:
+    if frequent_itemsets.empty:
         for cand_sup in [0.10, 0.06, 0.04, 0.02, 0.01, 0.005]:
             if cand_sup < min_support:
                 candidate_itemsets = apriori(df_encoded, min_support=cand_sup, max_len=max_len, use_colnames=True)
@@ -229,8 +229,8 @@ def run_apriori(min_support=0.6, min_confidence=0.3, min_lift=1.0, country=None,
     except Exception:
         rules_df = pd.DataFrame()
 
-    # If no rules at current min_confidence, relax confidence slightly to ensure discovery
-    if rules_df.empty and min_confidence > 0.15:
+    # If no rules at current min_confidence, relax confidence slightly to ensure discovery only if adapting high support
+    if rules_df.empty and 0.15 < min_confidence <= 0.85 and note is not None:
         for alt_conf in [0.25, 0.20, 0.15]:
             try:
                 rules_df = association_rules(frequent_itemsets, metric="confidence", min_threshold=alt_conf)

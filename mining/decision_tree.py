@@ -79,6 +79,8 @@ def get_classification_explanations():
 
 def extract_invoice_dataset(country=None):
     """Extracts invoice-level aggregate dataset from Fact_Sales and Dim_Country.
+    If database tables are empty or uninitialized, falls back automatically to the
+    available dataset files (Online Retail.xlsx / cleaned_online_retail.csv).
 
     Args:
         country (str, optional): Geographic filter.
@@ -86,6 +88,7 @@ def extract_invoice_dataset(country=None):
     Returns:
         pd.DataFrame: Invoice-level feature DataFrame.
     """
+    import os
     where_sql = "WHERE 1=1"
     params = []
 
@@ -117,20 +120,111 @@ def extract_invoice_dataset(country=None):
         finally:
             conn.close()
 
-        if not rows:
-            return pd.DataFrame()
+        if rows and len(rows) >= 25:
+            df = pd.DataFrame(rows)
+            df['line_count'] = df['line_count'].astype(int)
+            df['total_quantity'] = df['total_quantity'].astype(int)
+            df['avg_unit_price'] = df['avg_unit_price'].astype(float)
+            df['distinct_products'] = df['distinct_products'].astype(int)
+            df['invoice_total'] = df['invoice_total'].astype(float)
+            return df
+        else:
+            raise ValueError("Warehouse has fewer than 25 invoice rows.")
 
-        df = pd.DataFrame(rows)
-        df['line_count'] = df['line_count'].astype(int)
-        df['total_quantity'] = df['total_quantity'].astype(int)
-        df['avg_unit_price'] = df['avg_unit_price'].astype(float)
-        df['distinct_products'] = df['distinct_products'].astype(int)
-        df['invoice_total'] = df['invoice_total'].astype(float)
-
-        return df
     except Exception as e:
-        print(f"[Decision Tree Warning] Unable to extract invoices (tables may be uninitialized): {e}")
+        print(f"[Decision Tree Notice] Warehouse database extraction note: {e}")
+        # Graceful fallback to available dataset files
+        try:
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            excel_path = os.path.join(project_root, 'data', 'raw', 'Online Retail.xlsx')
+            csv_path = os.path.join(project_root, 'data', 'processed', 'cleaned_online_retail.csv')
+
+            df_raw = None
+            if os.path.exists(excel_path):
+                df_raw = pd.read_excel(excel_path, nrows=5000)
+            elif os.path.exists(csv_path):
+                df_raw = pd.read_csv(csv_path)
+
+            if df_raw is not None and not df_raw.empty:
+                inv_col = 'InvoiceNo' if 'InvoiceNo' in df_raw.columns else None
+                qty_col = 'Quantity' if 'Quantity' in df_raw.columns else None
+                price_col = 'UnitPrice' if 'UnitPrice' in df_raw.columns else None
+                prod_col = 'StockCode' if 'StockCode' in df_raw.columns else ('Description' if 'Description' in df_raw.columns else None)
+                cntry_col = 'Country' if 'Country' in df_raw.columns else None
+
+                if inv_col and qty_col and price_col:
+                    df_clean = df_raw.dropna(subset=[inv_col, qty_col, price_col]).copy()
+                    df_clean = df_clean[df_clean[qty_col] > 0]
+                    df_clean = df_clean[df_clean[price_col] > 0]
+
+                    if country and cntry_col:
+                        df_clean = df_clean[df_clean[cntry_col] == country]
+
+                    if not df_clean.empty:
+                        if 'TotalAmount' not in df_clean.columns:
+                            df_clean['TotalAmount'] = (df_clean[qty_col] * df_clean[price_col]).round(2)
+
+                        agg = df_clean.groupby(inv_col).agg(
+                            line_count=(qty_col, 'count'),
+                            total_quantity=(qty_col, 'sum'),
+                            avg_unit_price=(price_col, 'mean'),
+                            distinct_products=(prod_col, 'nunique') if prod_col else (qty_col, 'count'),
+                            country=(cntry_col, 'first') if cntry_col else ('InvoiceNo', lambda x: 'United Kingdom'),
+                            invoice_total=('TotalAmount', 'sum')
+                        ).reset_index()
+
+                        agg['line_count'] = agg['line_count'].astype(int)
+                        agg['total_quantity'] = agg['total_quantity'].astype(int)
+                        agg['avg_unit_price'] = agg['avg_unit_price'].round(2).astype(float)
+                        agg['distinct_products'] = agg['distinct_products'].astype(int)
+                        agg['invoice_total'] = agg['invoice_total'].round(2).astype(float)
+                        return agg
+        except Exception as fb_err:
+            print(f"[Decision Tree Fallback Error] {fb_err}")
+
         return pd.DataFrame()
+
+
+def extract_decision_rules(tree, feature_names, class_names=['Low Value (< Median)', 'High Value (>= Median)'], max_rules=6):
+    """Extracts human-readable, actionable decision paths from the trained decision tree."""
+    rules = []
+
+    def recurse(node, current_conditions):
+        if tree.children_left[node] == -1 and tree.children_right[node] == -1:
+            # Leaf node reached (final decision)
+            samples = int(tree.n_node_samples[node])
+            values = tree.value[node][0]
+            pred_class_idx = int(np.argmax(values))
+            val = float(values[pred_class_idx])
+            purity = round(val * 100, 1) if val <= 1.0 else round((val / samples) * 100, 1)
+            rules.append({
+                'conditions': list(current_conditions),
+                'decision': class_names[pred_class_idx],
+                'class_code': pred_class_idx,
+                'samples': samples,
+                'purity': purity,
+                'is_high_value': pred_class_idx == 1
+            })
+            return
+
+        feat = feature_names[tree.feature[node]]
+        display_feat = feat.replace('country_', 'Country: ').replace('_', ' ').title()
+        thresh = round(float(tree.threshold[node]), 2)
+
+        if 'Price' in display_feat:
+            left_cond = f"{display_feat} <= ${thresh:.2f}"
+            right_cond = f"{display_feat} > ${thresh:.2f}"
+        else:
+            left_cond = f"{display_feat} <= {thresh:.1f}"
+            right_cond = f"{display_feat} > {thresh:.1f}"
+
+        recurse(tree.children_left[node], current_conditions + [left_cond])
+        recurse(tree.children_right[node], current_conditions + [right_cond])
+
+    recurse(0, [])
+    # Sort by sample count descending to surface the most prevalent business decision rules
+    rules.sort(key=lambda r: r['samples'], reverse=True)
+    return rules[:max_rules]
 
 
 def build_tree_structure(tree, feature_names, node_id=0, depth=0, max_depth=3):
@@ -261,6 +355,7 @@ def train_decision_tree(max_depth=4, test_size=0.25, min_samples_split=5, countr
     # Step 8: Tree Rules and Structure
     tree_rules_text = export_text(clf, feature_names=feature_names)
     tree_structure = build_tree_structure(clf.tree_, feature_names, max_depth=max_depth)
+    decision_rules = extract_decision_rules(clf.tree_, feature_names)
 
     duration = round(time.time() - start_time, 2)
 
@@ -302,6 +397,7 @@ def train_decision_tree(max_depth=4, test_size=0.25, min_samples_split=5, countr
             'tp': tp
         },
         'feature_importance': feat_imp,
+        'decision_rules': decision_rules,
         'tree_rules_text': tree_rules_text,
         'tree_structure': tree_structure,
         'classification_explanations': get_classification_explanations(),

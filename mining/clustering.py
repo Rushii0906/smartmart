@@ -96,24 +96,75 @@ def extract_rfm_features(country=None):
         finally:
             conn.close()
 
-        if not rows:
-            return pd.DataFrame()
+        if rows and len(rows) >= 10:
+            df = pd.DataFrame(rows)
 
-        df = pd.DataFrame(rows)
+            # Calculate Recency in days relative to snapshot_date (+1 to avoid 0 days)
+            df['last_date'] = pd.to_datetime(df['last_date'])
+            snap_dt = pd.to_datetime(snapshot_date)
+            df['recency'] = (snap_dt - df['last_date']).dt.days + 1
 
-        # Calculate Recency in days relative to snapshot_date (+1 to avoid 0 days)
-        df['last_date'] = pd.to_datetime(df['last_date'])
-        snap_dt = pd.to_datetime(snapshot_date)
-        df['recency'] = (snap_dt - df['last_date']).dt.days + 1
+            # Ensure numeric columns and filter non-positive spend
+            df['frequency'] = pd.to_numeric(df['frequency'], errors='coerce').fillna(1).astype(int)
+            df['monetary'] = pd.to_numeric(df['monetary'], errors='coerce').fillna(0.0).astype(float)
+            df = df[df['monetary'] > 0].copy()
 
-        # Ensure numeric columns and filter non-positive spend
-        df['frequency'] = pd.to_numeric(df['frequency'], errors='coerce').fillna(1).astype(int)
-        df['monetary'] = pd.to_numeric(df['monetary'], errors='coerce').fillna(0.0).astype(float)
-        df = df[df['monetary'] > 0].copy()
+            return df
+        else:
+            raise ValueError("Fewer than 10 customer records found in database.")
 
-        return df
     except Exception as e:
-        print(f"[RFM Extraction Warning] Unable to query RFM data (tables may be uninitialized): {e}")
+        print(f"[RFM Extraction Notice] Warehouse extraction note: {e}")
+        # Graceful fallback to available dataset files
+        try:
+            import os
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            excel_path = os.path.join(project_root, 'data', 'raw', 'Online Retail.xlsx')
+            csv_path = os.path.join(project_root, 'data', 'processed', 'cleaned_online_retail.csv')
+
+            df_raw = None
+            if os.path.exists(excel_path):
+                df_raw = pd.read_excel(excel_path, nrows=5000)
+            elif os.path.exists(csv_path):
+                df_raw = pd.read_csv(csv_path)
+
+            if df_raw is not None and not df_raw.empty:
+                cust_col = 'CustomerID' if 'CustomerID' in df_raw.columns else None
+                inv_col = 'InvoiceNo' if 'InvoiceNo' in df_raw.columns else None
+                date_col = 'InvoiceDate' if 'InvoiceDate' in df_raw.columns else None
+                qty_col = 'Quantity' if 'Quantity' in df_raw.columns else None
+                price_col = 'UnitPrice' if 'UnitPrice' in df_raw.columns else None
+                cntry_col = 'Country' if 'Country' in df_raw.columns else None
+
+                if cust_col and inv_col and date_col and qty_col and price_col:
+                    df_clean = df_raw.dropna(subset=[cust_col, inv_col, date_col, qty_col, price_col]).copy()
+                    df_clean = df_clean[df_clean[qty_col] > 0]
+                    df_clean = df_clean[df_clean[price_col] > 0]
+
+                    if country and cntry_col:
+                        df_clean = df_clean[df_clean[cntry_col] == country]
+
+                    if not df_clean.empty:
+                        df_clean['TotalAmount'] = (df_clean[qty_col] * df_clean[price_col]).round(2)
+                        df_clean[date_col] = pd.to_datetime(df_clean[date_col])
+                        snap_dt = df_clean[date_col].max()
+
+                        agg = df_clean.groupby(cust_col).agg(
+                            last_date=(date_col, 'max'),
+                            frequency=(inv_col, 'nunique'),
+                            monetary=('TotalAmount', 'sum')
+                        ).reset_index()
+
+                        agg['Customer_ID'] = agg[cust_col].astype(int)
+                        agg['CustomerCode'] = agg[cust_col].astype(str)
+                        agg['recency'] = (snap_dt - agg['last_date']).dt.days + 1
+                        agg['frequency'] = agg['frequency'].astype(int)
+                        agg['monetary'] = agg['monetary'].round(2).astype(float)
+                        agg = agg[agg['monetary'] > 0].copy()
+                        return agg
+        except Exception as fb_err:
+            print(f"[RFM Fallback Error] {fb_err}")
+
         return pd.DataFrame()
 
 

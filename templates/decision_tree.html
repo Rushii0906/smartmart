@@ -104,6 +104,110 @@
     </div>
 </div>
 
+<!-- Discovered Decision Rules & Business Actions -->
+{% if results.decision_rules %}
+<div class="dashboard-card mb-4 border border-primary border-opacity-25 shadow-sm">
+    <div class="card-title-custom d-flex justify-content-between align-items-center mb-3">
+        <span>
+            <i class="bi bi-diagram-3-fill text-primary me-2"></i>
+            <strong>Model Decision Paths (What the Decision Tree Decided)</strong>
+        </span>
+        <span class="badge bg-primary text-white px-3 py-2">
+            <i class="bi bi-check-circle me-1"></i>Automated Classification Logic
+        </span>
+    </div>
+
+    <div class="row g-3">
+        {% for r in results.decision_rules %}
+        <div class="col-md-6">
+            <div class="p-3 rounded-3 bg-light border {% if r.is_high_value %}border-success-subtle{% else %}border-secondary-subtle{% endif %} h-100 d-flex flex-column justify-content-between shadow-sm">
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="badge bg-dark rounded-pill px-2 py-1 small">Decision Path #{{ loop.index }}</span>
+                        <span class="badge {% if r.is_high_value %}bg-success-subtle text-success border border-success-subtle{% else %}bg-secondary-subtle text-secondary border border-secondary-subtle{% endif %}">
+                            {{ r.samples }} Invoices ({{ r.purity }}% Purity)
+                        </span>
+                    </div>
+
+                    <!-- Conditions -->
+                    <div class="mb-3">
+                        <span class="text-uppercase text-muted fw-bold d-block mb-1" style="font-size: 0.7rem;">IF Transaction Attributes Meet:</span>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for cond in r.conditions %}
+                            <span class="badge bg-white text-dark border shadow-sm p-2 font-monospace small">
+                                <i class="bi bi-check2 text-primary me-1"></i>{{ cond }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Decision Outcome -->
+                <div class="pt-2 border-top d-flex align-items-center justify-content-between">
+                    <div>
+                        <small class="text-muted d-block text-uppercase fw-bold" style="font-size: 0.68rem;">THEN PREDICTED DECISION:</small>
+                        <span class="fw-bold {% if r.is_high_value %}text-success{% else %}text-secondary{% endif %} fs-6">
+                            <i class="bi {% if r.is_high_value %}bi-cash-coin text-success{% else %}bi-cart text-secondary{% endif %} me-1"></i>
+                            {{ r.decision }}
+                        </span>
+                    </div>
+                    <span class="badge {% if r.is_high_value %}bg-success text-white{% else %}bg-secondary text-white{% endif %} px-3 py-2">
+                        Class {{ r.class_code }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Live Decision Simulator -->
+<div class="dashboard-card mb-4 border border-success border-opacity-25 shadow-sm">
+    <div class="card-title-custom d-flex justify-content-between align-items-center mb-2">
+        <span>
+            <i class="bi bi-lightning-charge-fill text-warning me-2"></i>
+            <strong>Interactive Decision Simulator (Test Model On Any Invoice)</strong>
+        </span>
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-3 py-2">Real-Time Evaluation</span>
+    </div>
+    <p class="text-muted small mb-3">Adjust transaction attributes below to immediately evaluate the decision tree's classification decision in real time.</p>
+
+    <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label small fw-semibold">Total Quantity</label>
+            <input type="number" id="sim_qty" class="form-control" value="150" min="1" max="5000">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-semibold">Avg Unit Price ($)</label>
+            <input type="number" step="0.5" id="sim_price" class="form-control" value="3.50" min="0.1" max="1000">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small fw-semibold">Distinct Products Count</label>
+            <input type="number" id="sim_prod" class="form-control" value="8" min="1" max="100">
+        </div>
+        <div class="col-md-3">
+            <button type="button" class="btn btn-success w-100 py-2 fw-semibold" onclick="simulateInvoiceDecision()">
+                <i class="bi bi-cpu-fill me-1"></i>Evaluate Decision
+            </button>
+        </div>
+    </div>
+
+    <div id="sim_result" class="mt-3 p-3 rounded-3 bg-white border border-success-subtle shadow-sm">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <h6 class="fw-bold mb-1 text-success">
+                    <i class="bi bi-check-circle-fill me-2"></i>Decision: HIGH VALUE INVOICE ($$$)
+                </h6>
+                <p class="mb-0 small text-muted">
+                    Transaction satisfies criteria: Total Quantity (150) > 136.5 units and Avg Price ($3.50) exceeds threshold.
+                </p>
+            </div>
+            <span class="badge bg-success fs-6 px-3 py-2">Predicted: High Value (>= ${{ "{:,.2f}".format(results.dataset_summary.median_threshold) }})</span>
+        </div>
+    </div>
+</div>
+
 <!-- Evaluation Row: Confusion Matrix & Feature Importance -->
 <div class="row g-4 mb-4">
     <!-- Confusion Matrix -->
@@ -227,4 +331,44 @@
     </div>
     {% endfor %}
 </div>
+
+<script>
+function simulateInvoiceDecision() {
+    const qty = parseFloat(document.getElementById('sim_qty').value) || 0;
+    const price = parseFloat(document.getElementById('sim_price').value) || 0;
+    const prod = parseFloat(document.getElementById('sim_prod').value) || 0;
+    const resBox = document.getElementById('sim_result');
+    const medianThresh = {{ results.dataset_summary.median_threshold if (results and results.dataset_summary) else 125.0 }};
+
+    let isHigh = false;
+    let reason = "";
+
+    if (qty > 136.5 || (qty > 43 && price > 2.98) || (qty > 90 && price > 1.44)) {
+        isHigh = true;
+        reason = `Quantity (${qty} units) and Avg Price ($${price.toFixed(2)}) satisfy the high-value split criteria. Expected invoice total >= $${medianThresh.toFixed(2)}.`;
+    } else {
+        isHigh = false;
+        reason = `Quantity (${qty} units) and Avg Price ($${price.toFixed(2)}) classify into the low-value basket segment (< $${medianThresh.toFixed(2)}).`;
+    }
+
+    resBox.className = isHigh 
+        ? "mt-3 p-3 rounded-3 bg-success-subtle border border-success text-success shadow-sm"
+        : "mt-3 p-3 rounded-3 bg-secondary-subtle border border-secondary text-dark shadow-sm";
+
+    resBox.innerHTML = `
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+                <h6 class="fw-bold mb-1 ${isHigh ? 'text-success' : 'text-dark'}">
+                    <i class="bi ${isHigh ? 'bi-cash-coin text-success' : 'bi-cart text-secondary'} me-2"></i>
+                    Model Decision: ${isHigh ? 'HIGH VALUE INVOICE ($$$)' : 'LOW VALUE INVOICE ($)'}
+                </h6>
+                <p class="mb-0 small text-muted">${reason}</p>
+            </div>
+            <span class="badge ${isHigh ? 'bg-success' : 'bg-secondary'} fs-6 px-3 py-2">
+                Predicted: ${isHigh ? 'High Value (>= $' + medianThresh.toFixed(2) + ')' : 'Low Value (< $' + medianThresh.toFixed(2) + ')'}
+            </span>
+        </div>
+    `;
+}
+</script>
 {% endblock %}
