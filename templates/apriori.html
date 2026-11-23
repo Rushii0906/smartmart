@@ -15,17 +15,23 @@
         <div class="row g-3 align-items-end">
             <div class="col-md-3">
                 <label for="min_support" class="form-label small fw-semibold">
-                    Min Support: <span id="support_val" class="text-primary fw-bold">{{ min_support or 0.02 }}</span>
+                    Min Support: <span id="support_val" class="text-primary fw-bold">{{ min_support or 0.6 }}</span>
                 </label>
-                <input type="range" class="form-range" id="min_support" name="min_support" min="0.01" max="0.10" step="0.005" value="{{ min_support or 0.02 }}" oninput="document.getElementById('support_val').innerText = this.value">
-                <div class="form-text small">Proportion of baskets containing itemset</div>
+                <div class="input-group">
+                    <input type="number" step="0.01" min="0.001" max="1.0" class="form-control" id="min_support" name="min_support" value="{{ min_support or 0.6 }}" oninput="document.getElementById('support_val').innerText = this.value; document.getElementById('min_support_range').value = this.value">
+                </div>
+                <input type="range" class="form-range mt-1" id="min_support_range" min="0.01" max="1.0" step="0.01" value="{{ min_support or 0.6 }}" oninput="document.getElementById('support_val').innerText = this.value; document.getElementById('min_support').value = this.value">
+                <div class="form-text small">Default: 0.6 (or range 0.01–1.0)</div>
             </div>
 
             <div class="col-md-3">
                 <label for="min_confidence" class="form-label small fw-semibold">
                     Min Confidence: <span id="conf_val" class="text-primary fw-bold">{{ min_confidence or 0.30 }}</span>
                 </label>
-                <input type="range" class="form-range" id="min_confidence" name="min_confidence" min="0.10" max="0.90" step="0.05" value="{{ min_confidence or 0.30 }}" oninput="document.getElementById('conf_val').innerText = this.value">
+                <div class="input-group">
+                    <input type="number" step="0.05" min="0.05" max="1.0" class="form-control" id="min_confidence" name="min_confidence" value="{{ min_confidence or 0.30 }}" oninput="document.getElementById('conf_val').innerText = this.value; document.getElementById('min_conf_range').value = this.value">
+                </div>
+                <input type="range" class="form-range mt-1" id="min_conf_range" min="0.05" max="1.0" step="0.05" value="{{ min_confidence or 0.30 }}" oninput="document.getElementById('conf_val').innerText = this.value; document.getElementById('min_confidence').value = this.value">
                 <div class="form-text small">P(Consequent | Antecedent)</div>
             </div>
 
@@ -87,6 +93,85 @@
         </div>
     </div>
 </div>
+
+<!-- Top 5 Recommended Product Pairings (What Products Go With What) -->
+{% if results.top_5_rules %}
+<div class="dashboard-card mb-4 border-primary">
+    <div class="card-title-custom d-flex justify-content-between align-items-center mb-3">
+        <span>
+            <i class="bi bi-stars text-warning fs-5 me-2"></i>
+            <strong class="fs-6">Top 5 Product Recommendations (What Products Go With What)</strong>
+        </span>
+        <span class="badge bg-primary text-white px-3 py-2">
+            <i class="bi bi-bag-check me-1"></i>Cross-Selling Priority
+        </span>
+    </div>
+
+    {% if results.note %}
+    <div class="alert alert-info py-2 px-3 small mb-3">
+        <i class="bi bi-info-circle-fill me-1"></i>{{ results.note }}
+    </div>
+    {% endif %}
+
+    <div class="row g-3">
+        {% for r in results.top_5_rules %}
+        <div class="col-12">
+            <div class="p-3 rounded-3 bg-light border border-secondary-subtle">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                    <!-- Rank & Product Pairing -->
+                    <div class="d-flex align-items-center gap-3 flex-grow-1">
+                        <span class="badge bg-dark rounded-circle p-2 fs-6" style="width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;">#{{ r.rank }}</span>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <div>
+                                <span class="text-uppercase text-muted fw-bold d-block" style="font-size: 0.72rem;">Antecedents (IF Customer Buys...)</span>
+                                <span class="badge bg-primary text-white p-2 fs-6 text-wrap text-start shadow-sm">
+                                    <i class="bi bi-cart-plus me-1"></i>{{ r.antecedents }}
+                                </span>
+                            </div>
+                            <div class="text-center px-2">
+                                <i class="bi bi-arrow-right-circle-fill fs-3 text-primary"></i>
+                                <span class="text-muted d-block fw-bold" style="font-size: 0.65rem;">GOES WITH</span>
+                            </div>
+                            <div>
+                                <span class="text-uppercase text-muted fw-bold d-block" style="font-size: 0.72rem;">Consequents (...THEN Also Buys)</span>
+                                <span class="badge bg-success text-white p-2 fs-6 text-wrap text-start shadow-sm">
+                                    <i class="bi bi-bag-check-fill me-1"></i>{{ r.consequents }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Badges -->
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="text-center px-3 py-1 bg-white rounded border">
+                            <span class="text-muted d-block small">Confidence</span>
+                            <span class="fw-bold text-dark fs-6">{{ r.confidence_pct }}%</span>
+                        </div>
+                        <div class="text-center px-3 py-1 bg-white rounded border">
+                            <span class="text-muted d-block small">Lift</span>
+                            <span class="fw-bold text-success fs-6">{{ r.lift }}x</span>
+                        </div>
+                        <div class="text-center px-3 py-1 bg-white rounded border">
+                            <span class="text-muted d-block small">Support</span>
+                            <span class="fw-bold text-primary fs-6">{{ r.support }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Merchandising Strategy -->
+                <div class="mt-2 pt-2 border-top small text-muted d-flex align-items-center justify-content-between">
+                    <div>
+                        <i class="bi bi-lightbulb-fill text-warning me-1"></i>
+                        <strong>Merchandising Strategy:</strong> {{ r.recommendation }}
+                    </div>
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">High Affinity</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 <!-- Association Rules Table -->
 <div class="dashboard-card mb-4">

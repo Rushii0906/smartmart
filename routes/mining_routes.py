@@ -31,7 +31,7 @@ def apriori_view():
     options = get_filter_options()
     countries = options.get('countries', [])
 
-    min_support = float(request.form.get('min_support', 0.02)) if request.method == 'POST' else 0.02
+    min_support = float(request.form.get('min_support', 0.6)) if request.method == 'POST' else 0.6
     min_confidence = float(request.form.get('min_confidence', 0.30)) if request.method == 'POST' else 0.30
     min_lift = float(request.form.get('min_lift', 1.2)) if request.method == 'POST' else 1.2
     selected_country = request.form.get('country') if request.method == 'POST' else ''
